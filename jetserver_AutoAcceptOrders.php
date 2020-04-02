@@ -11,50 +11,61 @@
 *
 **/
 if (!defined("WHMCS"))
-	die("This file cannot be accessed directly");
+    die("This file cannot be accessed directly");
 
 /*********************
  Auto Accept Orders Settings
 *********************/
-function jetserverAutoAcceptOrders_settings()
-{
-	return array(
-		'apiuser'		=> '', // one of the admins username
-		'autosetup' 		=> false, // determines whether product provisioning is performed
-		'sendregistrar' 	=> false, // determines whether domain automation is performed
-		'sendemail' 		=> false, // sets if welcome emails for products and registration confirmation emails for domains should be sent 
-		'ispaid'		=> true, // set to true if you want to accept only paid orders
-		'paymentmethod'		=> array(), // set the payment method you want to accept automaticly (leave empty to use all payment methods) * example array('paypal','amazonsimplepay')
-	);
+function jetserverAutoAcceptOrders_settings() {
+    return array(
+        'autosetup' => true, // determines whether product provisioning is performed
+        'sendregistrar' => false, // determines whether domain automation is performed
+        'sendemail' => true, // sets if welcome emails for products and registration confirmation emails for domains should be sent 
+        'ispaid' => true, // set to true if you want to accept only paid orders
+    );
 }
 /********************/
 
-function jetserverAutoAcceptOrders_accept($vars) 
-{
-	$settings = jetserverAutoAcceptOrders_settings();
+function jetserverAutoAcceptOrders_accept($vars)  {
+    $settings = jetserverAutoAcceptOrders_settings();
+    $ispaid = false;
 
-	$ispaid = true;
+    // Make sure proper variables are passed
+    if(!isset($vars['invoiceId']) || !isset($vars['orderId'])) {
+        logActivity('[Auto Accept] Variables not set, something went wrong', 0);
+        return;
+    }
 
-	if($vars['InvoiceID'])
-	{
-		$result = localAPI('getinvoice', array(
-			'invoiceid' 		=> $vars['InvoiceID'],
-		), $settings['apiuser']);
+    $invoiceid = $vars['invoiceId'];
+    $orderid = $vars['orderId'];
 
-		$ispaid = ($result['result'] == 'success' && $result['balance'] <= 0) ? true : false;
-	}
+    // Check if invoice is paid
+    $result = localAPI('GetInvoice', array('invoiceid' => $invoiceid));
+    if(isset($result['result']) && $result['result'] == 'success') {
+        $ispaid = ($result['balance'] <= 0) ? true : false;
+    } else {
+        return;
+    }
+    
+    // If 'ispaid' is set and invoice is not paid don't accept
+    if($settings['ispaid'] && !$ispaid) {
+        logActivity('[Auto Accept] Order not paid - Order ID: ' . $orderid, 0);
+        return;
+    }
 
-	if((!sizeof($settings['paymentmethod']) || sizeof($settings['paymentmethod']) && in_array($vars['PaymentMethod'], $settings['paymentmethod'])) && (!$settings['ispaid'] || $settings['ispaid'] && $ispaid))
-	{
-		$result = localAPI('acceptorder', array(
-			'orderid' 		=> $vars['OrderID'],
-			'autosetup' 		=> $settings['autosetup'],
-			'sendregistrar' 	=> $settings['sendregistrar'],
-			'sendemail' 		=> $settings['sendemail'],
-		), $settings['apiuser']);
-	}
+    // Accept order through API
+    $resultAccept = localAPI('AcceptOrder', array(
+        'orderid' => $orderid,
+        'autosetup' => $settings['autosetup'],
+        'sendregistrar' => $settings['sendregistrar'],
+        'sendemail' => $settings['sendemail'],
+    ));
+    
+    // Check if order accepted successfully
+    if(isset($resultAccept["result"]) && $resultAccept["result"] == "success") {
+        logActivity('[Auto Accept] Successfully accepted - Order ID: ' . $orderid, 0);
+    } else {
+        logActivity('[Auto Accept] Failed to accept! - Order ID: ' . $orderid, 0);
+    }
 }
-
-add_hook('AfterShoppingCartCheckout', 0, 'jetserverAutoAcceptOrders_accept');
-
-?>
+add_hook('OrderPaid', 0, 'jetserverAutoAcceptOrders_accept');
