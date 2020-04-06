@@ -1,22 +1,13 @@
 <?php
-/*
-*
-* Auto Accept Orders
-* Created By Idan Ben-Ezra
-*
-* Copyrights @ Jetserver Web Hosting
-* www.jetserver.net
-*
-* Hook version 1.0.1
-*
-**/
 if (!defined("WHMCS"))
     die("This file cannot be accessed directly");
+
+use WHMCS\Database\Capsule;
 
 /*********************
  Auto Accept Orders Settings
 *********************/
-function jetserverAutoAcceptOrders_settings() {
+function apexAutoAcceptOrders_settings() {
     return array(
         'autosetup' => true, // determines whether product provisioning is performed
         'sendregistrar' => false, // determines whether domain automation is performed
@@ -26,31 +17,22 @@ function jetserverAutoAcceptOrders_settings() {
 }
 /********************/
 
-function jetserverAutoAcceptOrders_accept($vars)  {
-    $settings = jetserverAutoAcceptOrders_settings();
-    $ispaid = false;
-
-    // Make sure proper variables are passed
-    if(!isset($vars['invoiceId']) || !isset($vars['orderId'])) {
-        logActivity('[Auto Accept] Variables not set, something went wrong', 0);
-        return;
-    }
-
-    $invoiceid = $vars['invoiceId'];
-    $orderid = $vars['orderId'];
-
-    // Check if invoice is paid
-    $result = localAPI('GetInvoice', array('invoiceid' => $invoiceid));
-    if(isset($result['result']) && $result['result'] == 'success') {
-        $ispaid = ($result['balance'] <= 0) ? true : false;
-    } else {
-        return;
-    }
+function apexAutoAcceptOrder($invoiceid, $orderid, $ispaid = false) {
+    $settings = apexAutoAcceptOrders_settings();
     
     // If 'ispaid' is set and invoice is not paid don't accept
-    if($settings['ispaid'] && !$ispaid) {
-        logActivity('[Auto Accept] Order not paid - Order ID: ' . $orderid, 0);
-        return;
+    if($settings['ispaid'] && $ispaid = false) {
+        // Check if invoice is paid
+        $result = localAPI('GetInvoice', array('invoiceid' => $invoiceid));
+        if(!isset($result['result']) || $result['result'] != 'success') {
+            logActivity('[Auto Accept] Failed to check paid status - Order ID: ' . $orderid, 0);
+            return;
+        } else {
+            if($result['balance'] > 0) {
+                logActivity('[Auto Accept] Order not paid - Order ID: ' . $orderid, 0);
+                return;
+            }
+        }
     }
 
     // Accept order through API
@@ -68,4 +50,30 @@ function jetserverAutoAcceptOrders_accept($vars)  {
         logActivity('[Auto Accept] Failed to accept! - Order ID: ' . $orderid, 0);
     }
 }
-add_hook('OrderPaid', 0, 'jetserverAutoAcceptOrders_accept');
+
+function apexOrderPaid_accept($vars)  {
+    // Make sure proper variables are passed
+    if(!isset($vars['invoiceId']) || !isset($vars['orderId'])) {
+        logActivity('[Auto Accept] Variables not set, something went wrong', 0);
+        return;
+    }
+
+    apexAutoAcceptOrder($vars['invoiceId'], $vars['orderId']);
+}
+add_hook('OrderPaid', 0, 'jetserverOrderPaid');
+
+function apexAfterProductUpgrade_accept($vars)  {
+    // Make sure proper variables are passed
+    if(!isset($vars['upgradeid'])) {
+        logActivity('[Auto Accept] Variables not set, something went wrong', 0);
+        return;
+    }
+
+    $orderid = @Capsule::table('tblupgrades')->where('id', $vars['upgradeid'])->value('orderid');
+
+    if($orderId > 0) {
+        apexAutoAcceptOrder(0, $orderid, true);
+    }
+}
+add_hook('AfterProductUpgrade', 0, 'apexAfterProductUpgrade_accept');
+
