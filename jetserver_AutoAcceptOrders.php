@@ -21,7 +21,7 @@ function apexAutoAcceptOrder($invoiceid, $orderid, $ispaid = false) {
     $settings = apexAutoAcceptOrders_settings();
     
     // If 'ispaid' is set and invoice is not paid don't accept
-    if($settings['ispaid'] && $ispaid = false) {
+    if($settings['ispaid'] && !$ispaid) {
         // Check if invoice is paid
         $result = localAPI('GetInvoice', array('invoiceid' => $invoiceid));
         if(!isset($result['result']) || $result['result'] != 'success') {
@@ -60,7 +60,7 @@ function apexOrderPaid_accept($vars)  {
 
     apexAutoAcceptOrder($vars['invoiceId'], $vars['orderId']);
 }
-add_hook('OrderPaid', 0, 'jetserverOrderPaid');
+add_hook('OrderPaid', 0, 'apexOrderPaid_accept');
 
 function apexAfterProductUpgrade_accept($vars)  {
     // Make sure proper variables are passed
@@ -69,11 +69,14 @@ function apexAfterProductUpgrade_accept($vars)  {
         return;
     }
 
+    logActivity('[Auto Accept] Found upgrade to accept - Upgrade ID: ' . $vars['upgradeid'], 0);
+
     $orderid = @Capsule::table('tblupgrades')->where('id', $vars['upgradeid'])->value('orderid');
 
-    if($orderId > 0) {
+    logActivity('[Auto Accept] Found orderid from upgrade - Order ID: ' . $orderid, 0);
+
+    if($orderid > 0) {
         apexAutoAcceptOrder(0, $orderid, true);
     }
 }
 add_hook('AfterProductUpgrade', 0, 'apexAfterProductUpgrade_accept');
-
